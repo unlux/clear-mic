@@ -1,0 +1,19 @@
+{
+  "buffering_plus_p95_ms" : 77.808042,
+  "crossfade_ms" : 10,
+  "deadline_misses" : 0,
+  "deadline_pass" : true,
+  "hop_ms" : 20,
+  "iterations" : 454,
+  "lookahead_ms" : 40,
+  "note" : "Estimated software delay only. Hardware, routing and call-app delay are not measured. Sound quality requires listening.",
+  "processed_speech_rms" : 0.15788438136609545,
+  "processing_max_ms" : 8.7181250000000006,
+  "processing_median_ms" : 6.9758750000000003,
+  "processing_p95_ms" : 7.8080420000000004,
+  "sample_rate" : 48000,
+  "sdk_version" : "4.1.0",
+  "synthetic_noise_reduction_db" : 20.267793004960687,
+  "warmup_ms" : 549.27370800000006,
+  "window_ms" : 2000
+}
