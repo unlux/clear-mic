@@ -1,3 +1,4 @@
+import AVFoundation
 import AudioToolbox
 import CoreAudio
 import Foundation
@@ -61,4 +62,19 @@ func setDevice(_ unit: AudioUnit?, to id: AudioDeviceID) throws {
     let status = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
                                       &device, UInt32(MemoryLayout<AudioDeviceID>.size))
     guard status == noErr else { throw MicError.message("Could not select the audio device. Core Audio error \(status).") }
+}
+
+/// Device selection updates the hardware input format before the engine's
+/// cached output format. Capture cannot convert between these two formats.
+func microphoneFormat(_ node: AVAudioInputNode) -> AVAudioFormat {
+    node.inputFormat(forBus: 0)
+}
+
+func currentDevice(_ unit: AudioUnit?) -> AudioDeviceID? {
+    guard let unit else { return nil }
+    var device = AudioDeviceID(0)
+    var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+    guard AudioUnitGetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
+                               &device, &size) == noErr else { return nil }
+    return device
 }

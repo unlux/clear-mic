@@ -203,6 +203,13 @@ struct ControlsView: View {
     @Environment(\.openWindow) private var openWindow
 
     init() {
+        if CommandLine.arguments.contains("--check-live-recovery") {
+            Task { @MainActor in
+                do { try await checkLiveAudioRecovery(); Darwin.exit(0) }
+                catch { fputs(error.localizedDescription + "\n", stderr); Darwin.exit(1) }
+            }
+            RunLoop.main.run()
+        }
         if CommandLine.arguments.contains("--check-model") {
             Task.detached {
                 do {

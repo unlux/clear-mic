@@ -19,17 +19,46 @@ final class AudioControls: @unchecked Sendable {
 }
 
 @MainActor final class AudioPipeline {
-    private var inputEngine: AVAudioEngine?
-    private var outputEngine: AVAudioEngine?
+    private(set) var inputEngine: AVAudioEngine?
+    private(set) var outputEngine: AVAudioEngine?
     private var worker: Task<Void, Never>?
-    private var notifications: [NSObjectProtocol] = []
+    private var configuration: AudioConfigurationObserver?
+    private var session: UUID?
+    private var graph: UUID?
+    private var rebuilds: [ContinuousClock.Instant] = []
+    private let availableDevices: () -> [AudioDevice]
     let controls = AudioControls()
+
+    init(availableDevices: @escaping () -> [AudioDevice] = AudioDevice.all) {
+        self.availableDevices = availableDevices
+    }
     nonisolated static let hop = 960 // 20 ms; model uses a sliding 2 s context.
 
     func start(input: AudioDevice, output: AudioDevice, processor: ClearProcessor,
                update: @escaping @MainActor @Sendable (AudioMetrics) -> Void,
                failed: @escaping @MainActor @Sendable (String) -> Void) throws {
-        guard input.id != output.id, !input.virtual, output.virtual, output.output else {
+        stop()
+        let session = UUID()
+        self.session = session
+        do { try startGraph(input: input, output: output, processor: processor, session: session, update: update, failed: failed) }
+        catch { stop(); throw error }
+    }
+
+    private func startGraph(input: AudioDevice, output: AudioDevice, processor: ClearProcessor, session: UUID,
+                            update: @escaping @MainActor @Sendable (AudioMetrics) -> Void,
+                            failed: @escaping @MainActor @Sendable (String) -> Void) throws {
+        let graph = UUID()
+        self.graph = graph
+        let reportUpdate: @MainActor @Sendable (AudioMetrics) -> Void = { [weak self] value in
+            guard self?.session == session, self?.graph == graph else { return }
+            update(value)
+        }
+        let reportFailure: @MainActor @Sendable (String) -> Void = { [weak self] text in
+            guard self?.session == session, self?.graph == graph else { return }
+            self?.stop()
+            failed(text)
+        }
+        guard input.id != output.id, input.input, !input.virtual, output.virtual, output.output else {
             throw MicError.message("Choose a physical microphone and a separate virtual output device.")
         }
         let capture = AVAudioEngine()
@@ -37,7 +66,7 @@ final class AudioControls: @unchecked Sendable {
         let inputNode = capture.inputNode
         try setDevice(inputNode.audioUnit, to: input.id)
         try setDevice(playback.outputNode.audioUnit, to: output.id)
-        let native = inputNode.outputFormat(forBus: 0)
+        let native = microphoneFormat(inputNode)
         guard native.sampleRate > 0, native.channelCount > 0, native.commonFormat == .pcmFormatFloat32, !native.isInterleaved,
               let sourceFormat = AVAudioFormat(standardFormatWithSampleRate: native.sampleRate, channels: 1),
               let targetFormat = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1),
@@ -53,7 +82,8 @@ final class AudioControls: @unchecked Sendable {
         // Only channel one of the selected microphone is captured. The output
         // mixer maps our mono speech to the virtual device's channel layout.
         inputNode.installTap(onBus: 0, bufferSize: 256, format: native) { buffer, _ in
-            if let channel = buffer.floatChannelData?[0] {
+            if buffer.format.sampleRate == native.sampleRate, buffer.format.channelCount == native.channelCount,
+               let channel = buffer.floatChannelData?[0] {
                 _ = incoming.write(channel, count: Int(buffer.frameLength))
             }
         }
@@ -65,14 +95,50 @@ final class AudioControls: @unchecked Sendable {
             capture.prepare()
             try capture.start()
         } catch {
-            stop()
+            stopGraph()
             throw error
         }
 
-        for engine in [capture, playback] {
-            notifications.append(NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { _ in
-                Task { @MainActor in failed("An audio device changed or disconnected. Refresh devices and start again.") }
-            })
+        let outputHardwareFormat = playback.outputNode.outputFormat(forBus: 0)
+        configuration = AudioConfigurationObserver(engines: [capture, playback]) { [weak self] in
+            guard let self, self.session == session, self.graph == graph else { return }
+            let devices = self.availableDevices()
+            // Selecting an AUHAL device posts an asynchronous notification even
+            // when the running graph already has the correct format. Recreating
+            // that healthy graph just repeats the same startup notification.
+            if capture.isRunning, playback.isRunning,
+               currentDevice(inputNode.audioUnit) == input.id,
+               currentDevice(playback.outputNode.audioUnit) == output.id,
+               microphoneFormat(inputNode) == native, inputNode.outputFormat(forBus: 0) == native,
+               playback.outputNode.outputFormat(forBus: 0) == outputHardwareFormat,
+               devices.contains(where: { $0.uid == input.uid && $0.id == input.id && $0.input }),
+               devices.contains(where: { $0.uid == output.uid && $0.id == output.id && $0.output }) {
+                return
+            }
+            // Never destroy engines on Core Audio's notification thread. The
+            // observer defers this callback until paired changes have settled.
+            self.stopGraph()
+            let now = ContinuousClock.now
+            self.rebuilds.removeAll { $0.duration(to: now) > .seconds(10) }
+            guard self.rebuilds.count < 3 else {
+                self.stop()
+                failed("Audio formats keep changing. Stop other audio effects, then start again.")
+                return
+            }
+            guard let currentInput = devices.first(where: { $0.uid == input.uid && $0.input && !$0.virtual }),
+                  let currentOutput = devices.first(where: { $0.uid == output.uid && $0.output && $0.virtual }) else {
+                self.stop()
+                failed("The selected microphone or virtual output disconnected. Reconnect it, refresh devices, and start again.")
+                return
+            }
+            self.rebuilds.append(now)
+            do {
+                try self.startGraph(input: currentInput, output: currentOutput, processor: processor,
+                                    session: session, update: update, failed: failed)
+            } catch {
+                self.stop()
+                failed("Could not restart audio after its format changed: \(error.localizedDescription)")
+            }
         }
         let controls = self.controls
         let rate = native.sampleRate
@@ -80,7 +146,7 @@ final class AudioControls: @unchecked Sendable {
             let batch = 1_024
             guard let inputBuffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: AVAudioFrameCount(batch)),
                   let converted = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: AVAudioFrameCount(Double(batch) * 48_000 / rate) + 256) else {
-                await failed("Could not allocate the microphone converter.")
+                await reportFailure("Could not allocate the microphone converter.")
                 return
             }
             var pending = [Float]()
@@ -134,7 +200,7 @@ final class AudioControls: @unchecked Sendable {
                         if lastUpdate.duration(to: .now) > .milliseconds(100) {
                             lastUpdate = .now
                             let rms: ([Float]) -> Double = { x in sqrt(x.reduce(0) { $0 + Double($1 * $1) } / Double(max(1, x.count))) }
-                            await update(AudioMetrics(inputLevel: rms(block), outputLevel: rms(cleaned), processingMS: milliseconds,
+                            await reportUpdate(AudioMetrics(inputLevel: rms(block), outputLevel: rms(cleaned), processingMS: milliseconds,
                                                       queueMS: Double(incoming.count) / rate * 1_000 + Double(outgoing.count) / 48,
                                                       underrunFrames: outgoing.underruns))
                         }
@@ -144,16 +210,23 @@ final class AudioControls: @unchecked Sendable {
             } catch is CancellationError {
                 // Stop is a normal user action.
             } catch {
-                await failed(error.localizedDescription)
+                await reportFailure(error.localizedDescription)
             }
         }
     }
 
     func stop() {
+        session = nil
+        rebuilds.removeAll()
+        stopGraph()
+    }
+
+    private func stopGraph() {
+        graph = nil
+        configuration?.stop()
+        configuration = nil
         worker?.cancel()
         worker = nil
-        for token in notifications { NotificationCenter.default.removeObserver(token) }
-        notifications.removeAll()
         inputEngine?.stop()
         inputEngine?.inputNode.removeTap(onBus: 0)
         outputEngine?.stop()

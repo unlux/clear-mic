@@ -18,6 +18,7 @@ let package = Package(
         .executableTarget(name: "ClearMic", dependencies: ["ClearMicCore", "ClearMicModel"]),
         .executableTarget(name: "ClearMicBench", dependencies: ["ClearMicCore", "ClearMicModel", .product(name: "Clear", package: "desert-ant-core")]),
         .testTarget(name: "ClearMicCoreTests", dependencies: ["ClearMicCore"]),
+        .testTarget(name: "ClearMicAudioTests", dependencies: ["ClearMic"]),
     ],
     swiftLanguageModes: [.v5]
 )

@@ -1,5 +1,8 @@
 # Validation on 2026-10-26
 
+Historical baseline. See [the device-recovery follow-up](device-recovery-20261102.md)
+for the later live-device bug and validation.
+
 Native host: MacBook Pro, Apple M5 Pro, 48 GB RAM, macOS 27.0.1, Swift 6.4.
 Clear SDK is pinned to 4.1.0. Model preparation disables the SDK's private Core
 ML compilation optimization. Checks use full Xcode through a per-process

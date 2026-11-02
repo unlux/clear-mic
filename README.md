@@ -58,7 +58,17 @@ but do not supply XCTest. The check also loads the model from the packaged app.
 The render check runs the app's actual source-node callback in offline rendering
 mode. It compares the output against 2,048 known frames without microphone access
 or device playback. Unit tests check streaming alignment, crossfade continuity,
-FIFO wrap/overflow and silence on underrun.
+FIFO wrap/overflow, silence on underrun, hardware versus cached capture formats,
+paired configuration notifications and cancellation after Stop.
+
+An optional live integration check uses the saved microphone and virtual output.
+It requests microphone permission if needed, processes briefly, tests
+configuration recovery and a simulated disconnection, and releases both devices.
+It saves no audio and does not change system audio defaults:
+
+```sh
+bash check-live.sh
+```
 
 ## Latency experiment
 
@@ -78,7 +88,10 @@ the output mixer to the virtual device. Input and output defaults are not change
 Whole-file loudness mastering is disabled. Bypass preserves the delayed timeline.
 The worker stops on excessive backlog or lost capture instead of accumulating
 seconds of delay. An output underrun inserts silence and exposes an on-screen
-warning. Device changes stop the session and require an explicit restart.
+warning. Startup notifications leave a healthy stream running. Format changes
+rebuild the audio path after a short settling delay. Recovery keeps the selected
+device UIDs and stops if either device disappears or formats
+keep changing. Stop cancels pending recovery, so it cannot reopen the microphone.
 Output starts after two hops are queued, adding 20 ms of reserve for callback
 phase and inference jitter. The model-only benchmark does not include it.
 
@@ -103,10 +116,10 @@ for the final-build measurements and validation notes.
 
 ## Limits and remaining checks
 
-Live microphone permission, BlackHole routing, subjective sound, long-session
-clock drift and actual Meet/Zoom/Discord call delay still need a hands-on test.
-The experiment establishes processing headroom, not a verified end-to-end latency
-or sound-quality guarantee. Recomputing overlapping windows is less efficient
+The live check passed physical microphone capture, Clear processing, BlackHole
+playback, configuration recovery and Stop on the tested MacBook. Subjective sound,
+long-session clock drift and actual Meet/Zoom/Discord calls still need a hands-on
+test. End-to-end call latency and sound quality have not been measured. Recomputing overlapping windows is less efficient
 than a model exported for stateful real-time processing, and can change sound at
 window boundaries despite the crossfade. Battery use has not been measured.
 
