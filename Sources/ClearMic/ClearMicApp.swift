@@ -110,6 +110,7 @@ import SwiftUI
 
 struct ControlsView: View {
     @ObservedObject var model: MicModel
+    @Environment(\.openWindow) private var openWindow
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack(alignment: .top) {
@@ -166,6 +167,8 @@ struct ControlsView: View {
                 Text(error).foregroundStyle(.red).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel("Error: \(error)")
             }
+            Text("Audio stays on your Mac. Starting prepares Clear and sends SDK licensing metadata, even before microphone permission. Read the privacy and licenses notice below.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Button(model.busy ? "Stop microphone" : "Start microphone") {
                     if model.busy { model.stop() } else { model.start() }
@@ -182,7 +185,12 @@ struct ControlsView: View {
                 Text("Closing this window keeps Clear Mic running in the menu bar. Use Stop or Quit to release the microphone.")
                 Text("Experimental live processing. Check delay and sound with a test call.")
             }.font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Link("Powered by Desert Ant Labs", destination: URL(string: "https://desertant.com")!).font(.caption)
+            HStack {
+                Link("Powered by Desert Ant Labs", destination: URL(string: "https://desertant.com")!)
+                Spacer()
+                Button("View privacy, terms and licenses") { openWindow(id: "legal") }
+                    .buttonStyle(.link)
+            }.font(.caption)
         }.padding(24).frame(width: 490).fixedSize(horizontal: false, vertical: true)
     }
 
@@ -203,6 +211,10 @@ struct ControlsView: View {
     @Environment(\.openWindow) private var openWindow
 
     init() {
+        if CommandLine.arguments.contains("--check-notices") {
+            do { try checkBundledLegalDocuments(); Darwin.exit(0) }
+            catch { fputs(error.localizedDescription + "\n", stderr); Darwin.exit(1) }
+        }
         if CommandLine.arguments.contains("--check-live-recovery") {
             Task { @MainActor in
                 do { try await checkLiveAudioRecovery(); Darwin.exit(0) }
@@ -237,9 +249,12 @@ struct ControlsView: View {
     var body: some Scene {
         Window("Clear Mic", id: "controls") { ControlsView(model: model) }
             .windowResizability(.contentSize)
+        Window("Privacy and licenses", id: "legal") { LegalView() }
+            .defaultSize(width: 740, height: 640)
         MenuBarExtra("Clear Mic", systemImage: model.running ? "mic.fill" : "mic.slash") {
             Text(model.running ? "Microphone active" : "Microphone off")
             Button("Open controls") { openWindow(id: "controls"); NSApp.activate(ignoringOtherApps: true) }
+            Button("View privacy, terms and licenses") { openWindow(id: "legal"); NSApp.activate(ignoringOtherApps: true) }
             if model.busy { Button("Stop microphone") { model.stop() } }
             Divider()
             Button("Quit Clear Mic") { model.stop(); NSApp.terminate(nil) }.keyboardShortcut("q")

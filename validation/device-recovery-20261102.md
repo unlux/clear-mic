@@ -35,5 +35,8 @@ times were 13.39 and 11.01 ms, with queues of 41.33 and 58.67 ms. These are brie
 live samples, not latency percentiles. Both engines were released at completion.
 No personal audio was saved. The fleet fixed checks also passed through
 `finalize-code`.
-Actual Meet, Zoom and Discord calls, subjective quality, end-to-end latency and
-long-session drift remain unverified.
+The maintainer subsequently reported good voice quality and negligible perceived
+delay in a listening test. The specific call app and measurement method were not
+recorded. This supports the practical result on one setup, not a measured latency
+claim or verification of all Meet, Zoom and Discord integrations. Long-session
+drift and battery consumption remain unverified.

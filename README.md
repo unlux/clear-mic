@@ -1,142 +1,169 @@
 # Clear Mic
 
-An experimental native macOS microphone cleaner using Desert Ant Labs Clear
-4.1.0. Select its virtual audio output as the microphone in Meet, Zoom or Discord.
+A native macOS microphone cleaner for Meet, Zoom, Discord and other apps that
+accept an audio input device. Choose a physical microphone, clean it locally,
+and send the result through a separately installed virtual audio driver.
 
-The app has physical microphone selection, virtual output selection, suppression
-strength, bypass, level meters, processing and queue metrics, and menu-bar stop
-and quit controls. It starts with the microphone off. Closing the controls window
-keeps an active session running; Stop or Quit releases the microphone.
+Powered by [Desert Ant Labs](https://desertant.com). Speech enhancement uses its
+Clear model and Swift SDK 4.1.0. Clear Mic is an independent project.
 
-## Run on the MacBook
+**License scope:** our application code is [MIT licensed](LICENSE). Desert Ant's
+SDK/model keep their [source-available license](LICENSES/Desert-Ant-Labs-Source-Available-1.0.txt).
+The full app and dependency bundle is not offered under MIT alone.
 
-Requires Apple silicon, macOS 15 or newer, and a virtual loopback device.
-BlackHole is a separate audio driver, not included in this app.
+```text
+Physical microphone -> Clear on your Mac -> BlackHole 2ch -> Call app
+```
 
-1. Install the official two-channel BlackHole driver. With Homebrew:
+## Get started
 
-   ```sh
-   brew install --cask blackhole-2ch
-   ```
+Requires an Apple silicon Mac, macOS 15 or newer, and a virtual loopback device.
+The tested setup is a MacBook Pro with an M5 Pro and BlackHole 2ch.
 
-   The installer can request the Mac administrator password and an audio-service
-   restart. Finish an active call before installing. Follow any restart request.
-2. Open Clear Mic. Select your physical microphone and BlackHole 2ch as output.
-3. Select Start microphone and allow macOS microphone access.
-4. In your call app, select BlackHole 2ch as the microphone. Keep the call's
-   speaker output on your normal headphones or speakers.
-5. Run a test call. Disable the call app's own noise suppression when comparing
-   the result, and avoid running another microphone effect on the same device.
+1. Install the official [BlackHole 2ch driver](https://existential.audio/blackhole/).
+   With Homebrew, run `brew install --cask blackhole-2ch`. It is a separate
+   installation, can request administrator approval, and is not bundled here.
+2. Build from source below, or get the experimental arm64 archive from
+   [Releases](https://github.com/unlux/clear-mic/releases). Move Clear Mic.app
+   into your Applications folder and open it.
+3. Select a physical microphone and BlackHole 2ch as the virtual output.
+4. Read the in-app privacy and licenses notice, choose **Start microphone**,
+   and allow microphone access in macOS.
+5. In your call app, select **BlackHole 2ch** as its microphone. Keep its speaker
+   output on your normal headphones or speakers. Make a test call.
 
-The first start downloads and prepares Clear. Later starts reuse the model
-cache. If permission was denied, allow Clear Mic under System Settings >
-Privacy & Security > Microphone. The app neither records nor saves live audio.
-The SDK can make model-download and usage-licensing requests; audio inference
-stays on the Mac. This is not a claim of zero network activity.
+The release is ad-hoc signed and is not notarized by Apple. macOS may prevent
+it from opening. Build from source if you prefer to inspect and build it yourself;
+review [Apple's guidance for opening apps](https://support.apple.com/en-us/102445) from outside the App Store. Do not
+turn off system security protections to run this experiment.
 
-## Build and validate
+The app starts with its microphone off. Closing the controls window keeps an
+active session running in the menu bar. **Stop** releases the microphone;
+**Quit** ends the app process. Startup configuration notifications keep healthy
+streams running; changed/stopped streams recover, and lost devices stop capture.
 
-Run on macOS with Swift 6.2 or newer. Full Xcode is not required on the tested
-MacBook; the Command Line Tools supplied the SDK.
+## Controls
+
+- Physical microphone and virtual output selection.
+- Noise suppression toggle, strength slider and delayed bypass.
+- Input/output level meters, processing/queue timings and output-gap warnings.
+- Menu bar access, Stop and Quit.
+- Offline privacy policy, terms and complete license texts inside the app.
+
+## Privacy
+
+Audio inference runs locally. Normal Clear Mic use saves no recordings and
+uploads neither microphone audio nor cleaned audio. Receiving call apps can
+record or transmit the virtual microphone under their own policies.
+
+The SDK downloads its model from Hugging Face and makes licensing requests to
+Desert Ant with a generated installation ID and app/model/SDK metadata. These
+requests can begin during preparation, before microphone permission is granted.
+There is no supported SDK telemetry opt-out. Stop releases audio devices but
+can leave SDK background licensing work running until Quit.
+
+Read the [privacy policy](PRIVACY.md) for destinations, fields, storage, retention,
+controls and third-party processing. See [terms of use](TERMS.md) for the release's
+scope and the separate software licenses. No account or subscription is required
+by this Clear Mic release.
+
+## Build
+
+Use macOS with Swift 6.2 or newer. Command Line Tools can build the app; the
+native XCTest suite requires full Xcode.
 
 ```sh
+git clone https://github.com/unlux/clear-mic.git
+cd clear-mic
 bash build-app.sh
-bash check.sh
-.build/release/ClearMic --check-render
-.build/release/ClearMic --list-devices
 open "dist/Clear Mic.app"
 ```
 
-`build-app.sh` produces an ad-hoc signed local app. It includes Desert Ant's
-license and third-party notices. This build is not notarized for public
-distribution. The dependency and resolved revisions are pinned.
-
-`check.sh` uses the installed full Xcode for XCTest, without changing the global
-developer-directory setting. Standalone Command Line Tools can build the app
-but do not supply XCTest. The check also loads the model from the packaged app.
-
-The render check runs the app's actual source-node callback in offline rendering
-mode. It compares the output against 2,048 known frames without microphone access
-or device playback. Unit tests check streaming alignment, crossfade continuity,
-FIFO wrap/overflow, silence on underrun, hardware versus cached capture formats,
-paired configuration notifications and cancellation after Stop.
-
-An optional live integration check uses the saved microphone and virtual output.
-It requests microphone permission if needed, processes briefly, tests
-configuration recovery and a simulated disconnection, and releases both devices.
-It saves no audio and does not change system audio defaults:
+The build pins dependency revisions in Package.resolved, preserves legal
+materials and the SDK privacy bundle, and verifies its ad-hoc signature. Model
+weights and the BlackHole driver are not included in the repository or archive.
+On first Start, the model is downloaded and prepared before capture begins.
 
 ```sh
-bash check-live.sh
+bash check.sh
 ```
 
-## Latency experiment
+Checks build the app, run XCTest, verify offline audio rendering, load the
+packaged model, enumerate audio devices, and check bundled legal documents.
+Model preparation can make the network requests in the privacy policy. The
+standard check never opens the microphone. It selects full Xcode for that
+process without changing the global developer-directory setting.
 
-The published Clear export processes independent two-second windows. Its SDK's
-file-streaming mode is not a live-microphone interface. This prototype slides a
-two-second history forward every 20 ms, runs the unmodified SDK, and emits only
-the newest usable segment. It holds back 40 ms of right context and crossfades
-10 ms of overlapping output. History is initially zero-filled, so the app does
-not wait for two seconds of microphone input before producing output.
-
-Processing runs off the audio callbacks. Single-producer/single-consumer C11
-atomic FIFOs connect capture, the worker and output. The callbacks do no inference,
-heap allocation or lock acquisition. The worker converts the microphone's sample
-rate to 48 kHz and captures its first channel. Output is mono and is mapped by
-the output mixer to the virtual device. Input and output defaults are not changed.
-
-Whole-file loudness mastering is disabled. Bypass preserves the delayed timeline.
-The worker stops on excessive backlog or lost capture instead of accumulating
-seconds of delay. An output underrun inserts silence and exposes an on-screen
-warning. Startup notifications leave a healthy stream running. Format changes
-rebuild the audio path after a short settling delay. Recovery keeps the selected
-device UIDs and stops if either device disappears or formats
-keep changing. Stop cancels pending recovery, so it cannot reopen the microphone.
-Output starts after two hops are queued, adding 20 ms of reserve for callback
-phase and inference jitter. The model-only benchmark does not include it.
-
-To reproduce the synthetic benchmark without microphone access:
+For a separate live integration check, stop any active Clear Mic session first:
 
 ```sh
-say -o /tmp/clear-mic-speech.aiff \
-  "A quiet microphone should keep every word clear while removing the sound of fans and typing. This is a synthetic recording for a live audio experiment."
-swift run -c release ClearMicBench /tmp/clear-mic-speech.aiff artifacts/bench-20ms 20
+bash check-live.sh "$PWD/dist/Clear Mic.app"
 ```
 
-The benchmark adds deterministic noise, writes noisy and cleaned WAVs, checks
-for finite and non-silent speech output, and reports warmup, processing
-percentiles and deadline misses. Noise attenuation on synthetic silence is a
-sanity check, not an intelligibility or speech-quality score.
+This opt-in check requests microphone permission if needed, processes briefly,
+tests startup notifications, recovery, Stop and simulated disconnection, then
+releases both devices. It saves no audio. It launches through macOS LaunchServices
+so permission is associated with the app. Direct SSH execution has a different
+permission context.
 
-Initial M5 Pro experiments met all 454 processing deadlines at a 20 ms hop.
-The first run measured median 6.65 ms, p95 7.63 ms and maximum 8.22 ms. The
-buffering-plus-p95 estimate was 77.63 ms. These figures exclude microphone
-hardware, converter, queue, output-device and call-app delay. See `validation/`
-for the final-build measurements and validation notes.
+## How the audio path works
 
-## Limits and remaining checks
+The published Clear export processes two-second windows. This app maintains a
+sliding two-second context and advances it every 20 ms. It holds back 40 ms of
+right context and crossfades 10 ms of overlapping output. History starts with
+zeros, so the app does not wait two seconds before it starts producing output.
 
-The live check passed physical microphone capture, Clear processing, BlackHole
-playback, configuration recovery and Stop on the tested MacBook. Subjective sound,
-long-session clock drift and actual Meet/Zoom/Discord calls still need a hands-on
-test. End-to-end call latency and sound quality have not been measured. Recomputing overlapping windows is less efficient
-than a model exported for stateful real-time processing, and can change sound at
-window boundaries despite the crossfade. Battery use has not been measured.
+Inference runs away from the real-time audio callbacks. C11 atomic FIFOs connect
+capture, processing and output. The callbacks do no inference, allocation or
+locking. The worker captures the selected input's first channel, converts its
+hardware sample rate to 48 kHz, and emits mono output to the virtual device.
+Whole-file loudness mastering and the SDK's private Core ML compilation
+optimization are disabled. Global input/output defaults are not changed.
 
-The app restricts outputs to virtual devices and inputs to physical microphones
-to avoid accidentally monitoring a microphone through speakers. No driver is
-installed, and no global audio defaults are changed by the build or checks.
-Only synthetic audio is saved by the benchmark. Clear suppresses non-speech noise
-but does not isolate a selected person from overlapping speakers.
+Output begins after two hops are queued. Excessive backlog stops processing
+instead of accumulating seconds of delay. Bypass preserves the delayed timeline.
+Recomputing overlapping windows costs more than stateful streaming inference and
+can change sound at window boundaries despite the crossfade.
 
-## Sources and license
+## Validation and limits
 
-- [Clear documentation](https://desertant.com/docs/clear/)
-- [Clear SDK source](https://github.com/Desert-Ant-Labs/desert-ant-core/tree/4.1.0/Sources/Clear)
-- [Desert Ant license](https://license.desertant.com/1.0)
-- [BlackHole setup and routing](https://github.com/ExistentialAudio/BlackHole)
+Nine native tests and the live capture/processing/BlackHole recovery check passed
+on the tested MacBook. The maintainer's listening test reported good voice quality
+and negligible perceived delay. This is subjective feedback on one setup, not an
+end-to-end latency measurement or a test of every call application.
 
-Clear and its SDK are source-available under Desert Ant's license. Attribution is
-visible in the app. Commercial distribution must respect its active-device
-threshold, telemetry terms and upstream notices. BlackHole is independently
-installed and licensed; this app does not bundle or modify its driver.
+A synthetic 20 ms benchmark met all 454 processing deadlines on the M5 Pro.
+Its final median processing time was 6.98 ms, p95 7.81 ms and maximum 8.72 ms.
+These measure model-processing headroom, excluding hardware, converter, queue,
+driver and call-app delay. See [validation notes](validation/README.md).
+
+Long sessions, clock drift across separate audio devices, battery use, broad
+hardware compatibility and VoiceOver interaction remain unverified. Clear
+suppresses non-speech noise; it does not isolate one person from overlapping
+speakers. This remains an experimental local build.
+
+The separate benchmark executable writes audio artifacts to the directory given
+to it. Use synthesized or otherwise non-sensitive test audio. It is not part of
+normal microphone use.
+
+## Licenses, attribution and contributing
+
+| Document | What it covers |
+| --- | --- |
+| [LICENSE](LICENSE) | MIT grant for original Clear Mic work |
+| [Third-party notices](THIRD_PARTY_NOTICES.md) | Desert Ant, DeepFilterNet, Swift Numerics and separately installed BlackHole |
+| [LICENSES](LICENSES/) | Preserved upstream license and copyright texts |
+| [Privacy policy](PRIVACY.md) | Actual local processing and network/storage behavior |
+| [Terms of use](TERMS.md) | Experimental release and upstream terms |
+| [Security policy](SECURITY.md) | Private vulnerability reporting |
+| [Contributing](CONTRIBUTING.md) | Development and validation |
+| [Changelog](CHANGELOG.md) | Release changes |
+
+Desert Ant's license permits embedding in an application, requires visible credit
+and usage reporting, and has a free tier below 100,000 monthly active devices per
+model per platform. Its competing-model training and other restrictions still
+apply. See the full upstream license before redistributing or commercializing.
+
+Source: [Clear documentation](https://desertant.com/docs/clear/),
+[SDK](https://github.com/Desert-Ant-Labs/desert-ant-core/tree/4.1.0), and
+[DeepFilterNet](https://github.com/Rikorose/DeepFilterNet).
