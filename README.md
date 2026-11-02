@@ -165,5 +165,5 @@ model per platform. Its competing-model training and other restrictions still
 apply. See the full upstream license before redistributing or commercializing.
 
 Source: [Clear documentation](https://desertant.com/docs/clear/),
-[SDK](https://github.com/Desert-Ant-Labs/desert-ant-core/tree/4.1.0), and
+[SDK](https://github.com/Desert-Ant-Labs/desert-ant-core/tree/86b9b55fe8c61ec1c27c5b6383f545c6df1d6ceb), and
 [DeepFilterNet](https://github.com/Rikorose/DeepFilterNet).
